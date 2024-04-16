@@ -7,7 +7,7 @@
     </head>
 
     <body>
-        <canvas id='canvas' width='540' height='540' style="width: 512px; height: 512px;"></canvas>
+        <canvas id='canvas' width='512' height='512' style="width: 512px; height: 512px;"></canvas>
         <style>
             body{
                 background-color: rgb(172, 172, 172);
@@ -27,8 +27,8 @@
         const ctx = canvas.getContext('webgpu');
         const CANVAS_WIDTH = canvas.width;
         const CANVAS_HEIGHT = canvas.height;
-        var FRAME = 1;
-        const MAX_FRAMES = 1543;
+        var FRAME = 0;
+        const MAX_FRAMES = 2000;
         const simData = new Float32Array([CANVAS_WIDTH, CANVAS_HEIGHT, FRAME, 0]);
     </script>
     <script src='SetUpWorld.js'></script>
