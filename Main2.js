@@ -313,7 +313,7 @@ async function start(){
     const WORK_GROUP_SIZE = Math.ceil(CANVAS_WIDTH/8);
     function mainLoop(){
         document.getElementById('text').innerHTML = FRAME;
-        updateCam();
+        //updateCam();
 
         let flipOrFlop = FRAME%2;
         const encoder = device.createCommandEncoder({ label: 'encoder' });
@@ -353,7 +353,7 @@ async function start(){
     }
 
 
-    userInput();
+    //userInput();
     mainLoop();
 }
 
