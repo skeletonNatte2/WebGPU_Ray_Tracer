@@ -185,10 +185,11 @@ fn computeMain(@builtin(global_invocation_id) globalInvocationID: vec3u){
 
     let screenSize = simData.dimensions.x;
     let texCoords = vec2u(pixel.xy);
-    let pixelIndex: u32 = texCoords.x + (u32(screenSize) * texCoords.y);
+    let pixelIndex: u32 = texCoords.x + u32(screenSize) * texCoords.y;
     let planeDist = 1.0;
 
-    var rngState = jenkinsHash(dot(texCoords, vec2u(1u,u32(screenSize))) ^ jenkinsHash(u32(frame)));
+    var rngState = pixelIndex + u32(frame) * 719324593u;
+    //jenkinsHash(dot(texCoords, vec2u(1u,u32(screenSize))) ^ jenkinsHash(u32(frame)));
 
     let rotMatX = mat3x3f(
         1.0, 0.0, 0.0,
@@ -202,19 +203,19 @@ fn computeMain(@builtin(global_invocation_id) globalInvocationID: vec3u){
     );
 
     var planePos = vec3f(
-        (pixel.x + random(&rngState) * 2 - 1) / screenSize - 0.5,
-        (pixel.y + random(&rngState) * 2 - 1) / -screenSize + 0.5, 
+        (pixel.x /*+ random(&rngState) - 0.5*/) / screenSize - 0.5,
+        (pixel.y /*+ random(&rngState) - 0.5)*/) / -screenSize + 0.5, 
         planeDist
     );
 
-    let numBounces = 100;
-    let numRays = 18;
+    let numBounces = 16;
+    let numRays = 6;
 
     var averageLight = vec3f(0.0);
     for(var i = 0; i < numRays; i += 1){
         var ray: Ray;
         ray.origin = camPos;
-        ray.dir = normalize(rotMatY * (rotMatX * planePos));
+        ray.dir = normalize(rotMatY * rotMatX * planePos);
 
         var totalLight = vec3f(0.0);
         var rayColor = vec3f(1.0);
@@ -227,16 +228,15 @@ fn computeMain(@builtin(global_invocation_id) globalInvocationID: vec3u){
 
                 let indRef = material.refractiveIndex;
                 let rayIsInside = select(1.0,0.0,dot(ray.dir,traceResults.normal) > 0.0);
-                let indRefsRatio = select(1.0 / indRef,indRef,dot(ray.dir,traceResults.normal) > 0.0);
+                let indRefsRatio = select(1.0 / indRef,indRef,rayIsInside == 0.0);
                 let n = faceForward(traceResults.normal,ray.dir,traceResults.normal);
-
-                var hitWasGlossy = 0.0;
 
                 var reflectance = (1.0 - indRefsRatio) / (1.0 + indRefsRatio);
                 reflectance = reflectance * reflectance;
                 reflectance = reflectance + (1.0 - reflectance) * pow((1.0 - dot(n,-ray.dir)),5.0);
 
-                var newDir = refract(ray.dir,n,indRefsRatio) + randomDir(&rngState) * 0.02;
+                var hitWasGlossy = 0.0;
+                var newDir = refract(ray.dir,n,indRefsRatio);
                 if(length(newDir) <= 0.001 || reflectance >= random(&rngState) * material.transparency){
                     var specularDir = reflect(ray.dir, n);
                     var diffuseDir = normalize(n + randomDir(&rngState));
