@@ -26,6 +26,7 @@ async function start(){
         },
     });
 
+
     const sampler = device.createSampler({
         magFilter: 'linear',
         minFilter: 'linear',
@@ -54,6 +55,7 @@ async function start(){
             GPUTextureUsage.STORAGE_BINDING |
             GPUTextureUsage.TEXTURE_BINDING,
     });
+
 
     const renderBindGroups = [
         device.createBindGroup({
@@ -86,6 +88,7 @@ async function start(){
         })
     ];
 
+
     const computeModule = device.createShaderModule({
         label: 'compute shader',
         code: computeModuleCode,
@@ -99,6 +102,7 @@ async function start(){
             entryPoint: "computeMain",
         }
     });
+
 
     const camDirUniformBuffer = device.createBuffer({
         label: 'Camera Direction Uniform',
@@ -127,6 +131,7 @@ async function start(){
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(simUniformBuffer, 0, simData);
+
 
     const computeBindGroups = [
         device.createBindGroup({
@@ -191,6 +196,7 @@ async function start(){
         })
     ];
 
+
     function updateCam(){
         if(LEFT){
             camDir[1] += 0.1;
@@ -243,84 +249,89 @@ async function start(){
     function userInput(){
         addEventListener('keydown', e => {
             FRAME = 1;
-            if(e.key == 'ArrowLeft'){
-                LEFT = true;
-            }
-            if(e.key == 'ArrowRight'){
-                RIGHT = true;
-            }
-            if(e.key == 'ArrowDown'){
-                DOWN = true;
-            }
-            if(e.key == 'ArrowUp'){
-                UP = true;
-            }
-            if(e.key == 'w'){
-                W = true;
-            }
-            if(e.key == 's'){
-                S = true;
-            }
-            if(e.key == 'a'){
-                A = true;
-            }
-            if(e.key == 'd'){
-                D = true;
-            }
-            if(e.key == 'Shift'){
-                SHIFT = true;
-            }
-            if(e.key == ' '){
-                SPACE = true;
+            switch(e.key){
+                case 'ArrowLeft':
+                    LEFT = true;
+                    break;
+                case 'ArrowRight':
+                    RIGHT = true;
+                    break;
+                case 'ArrowDown':
+                    DOWN = true;
+                    break;
+                case 'ArrowUp':
+                    UP = true;
+                    break;
+                case 'w':
+                    W = true;
+                    break;
+                case 's':
+                    S = true;
+                    break;
+                case 'a':
+                    A = true;
+                    break;
+                case 'd':
+                    D = true;
+                    break;
+                case 'Shift':
+                    SHIFT = true;
+                    break;
+                case ' ':
+                    SPACE = true;
+                    break;
             }
         });
 
         addEventListener('keyup', e => {
             FRAME = 1;
-            if(e.key == 'ArrowLeft'){
-                LEFT = false;
-            }
-            if(e.key == 'ArrowRight'){
-                RIGHT = false;
-            }
-            if(e.key == 'ArrowDown'){
-                DOWN = false;
-            }
-            if(e.key == 'ArrowUp'){
-                UP = false;
-            }
-            if(e.key == 'w'){
-                W = false;
-            }
-            if(e.key == 's'){
-                S = false;
-            }
-            if(e.key == 'a'){
-                A = false;
-            }
-            if(e.key == 'd'){
-                D = false;
-            }
-            if(e.key == 'Shift'){
-                SHIFT = false;
-            }
-            if(e.key == ' '){
-                SPACE = false;
+            switch(e.key){
+                case 'ArrowLeft':
+                    LEFT = false;
+                    break;
+                case 'ArrowRight':
+                    RIGHT = false;
+                    break;
+                case 'ArrowDown':
+                    DOWN = false;
+                    break;
+                case 'ArrowUp':
+                    UP = false;
+                    break;
+                case 'w':
+                    W = false;
+                    break;
+                case 's':
+                    S = false;
+                    break;
+                case 'a':
+                    A = false;
+                    break;
+                case 'd':
+                    D = false;
+                    break;
+                case 'Shift':
+                    SHIFT = false;
+                    break;
+                case ' ':
+                    SPACE = false;
+                    break;
             }
         });
     }
 
+
     const WORK_GROUP_SIZE = Math.ceil(CANVAS_WIDTH/8);
+
     function mainLoop(){
         document.getElementById('text').innerHTML = FRAME;
         //updateCam();
 
-        let flipOrFlop = FRAME%2;
         const encoder = device.createCommandEncoder({ label: 'encoder' });
 
         const computePass = encoder.beginComputePass();
         computePass.setPipeline(computePipeline);
-        computePass.setBindGroup(0, computeBindGroups[flipOrFlop]);
+        computePass.setBindGroup(0, computeBindGroups[flipOrFlop = FRAME%2]);
         computePass.dispatchWorkgroups(WORK_GROUP_SIZE, WORK_GROUP_SIZE);
         computePass.end();
 
