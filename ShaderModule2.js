@@ -35,6 +35,7 @@ struct SimData{
 struct Ray{
     origin: vec3f,
     dir: vec3f,
+    color: vec3f,
 }
 
 struct Material{
@@ -46,6 +47,7 @@ struct Material{
     specularProb: f32,
     transparency: f32,
     refractiveIndex: f32,
+    materialType: f32,
 }
 
 struct Sphere{
@@ -67,7 +69,7 @@ const horizonColor = vec3f(0.6523941, 0.93839283, 1.0);
 const skyColor = vec3f(0.2788092, 0.56480793, 0.9264151);
 const sunDir = normalize(vec3f(-3.0, 3.0, 2.0));
 const sunFocus = 500.0;
-const sunIntensity = 200.0;
+const sunIntensity = 150.0;
 
 @group(0) @binding(0) var outputTexture : texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(1) var inputTexture : texture_2d<f32>;
@@ -76,40 +78,23 @@ const sunIntensity = 200.0;
 @group(0) @binding(4) var<uniform> spheres: array<Sphere,${ NUM_SPHERES }>;
 @group(0) @binding(5) var<uniform> simData: SimData;
 
-fn jenkinsHash(input: u32) -> u32{
-    var x = input;
-    x += x << 10u;
-    x ^= x >> 6u;
-    x += x << 3u;
-    x ^= x >> 11u;
-    x += x << 15u;
-    return x;
-}
-
-fn randomInt(state: ptr<function, u32>){
+fn random(state: ptr<function, u32>) -> f32 {
     let oldState = *state + 747796405u + 2891336453u;
     let word = ((oldState >> ((oldState >> 28u) + 4u)) ^ oldState) * 277803737u;
     *state = (word >> 22u) ^ word;
+    return f32(*state) / 0xffffffff;
 }
 
-fn random(state: ptr<function, u32>) -> f32 {
-    randomInt(state);
-    return f32(*state) / f32(0xffffffffu);
+fn randomNormDist(state: ptr<function, u32>) -> f32 {
+    var theta = 6.283185307 * random(state);
+    var rho = sqrt(-2 * log(random(state)));
+    return rho * cos(theta);
 }
 
 fn randomDir(state: ptr<function, u32>) -> vec3f {
-    var x = random(state) * 2 - 1;
-    var y = random(state) * 2 - 1;
-    var z = random(state) * 2 - 1;
-
-    for(var i = 0; i < 999999; i++){
-        if(x * x + y * y + z * z <= 1){
-            return normalize(vec3f(x, y, z));
-        }
-        x = random(state) * 2 - 1;
-        y = random(state) * 2 - 1;
-        z = random(state) * 2 - 1;
-    }
+    var x = randomNormDist(state);
+    var y = randomNormDist(state);
+    var z = randomNormDist(state);
 
     return normalize(vec3f(x, y, z));
 }
@@ -124,16 +109,17 @@ fn randomHemiDir(state: ptr<function, u32>, normal: vec3f) -> vec3f {
 fn raySphereIntersect(ray: Ray, sphere: Sphere) -> HitInfo {
     var thisHit: HitInfo;
 
+    let squaredRadius = sphere.radius * sphere.radius;
     let l = sphere.pos - ray.origin;
     let tca = dot(l,ray.dir);
-    let d = sqrt(dot(l, l) - (tca * tca));
+    let d = dot(l, l) - tca * tca;
 
-    if(tca < 0 || d > sphere.radius){
+    if(tca < 0 || d > squaredRadius){
         thisHit.didHit = false;
         return thisHit;
     }
 
-    let thc = sqrt((sphere.radius * sphere.radius) - (d * d));
+    let thc = sqrt(squaredRadius - d);
     var t = tca - thc;
     if(t < 0.0){
         t = tca + thc;
@@ -144,6 +130,75 @@ fn raySphereIntersect(ray: Ray, sphere: Sphere) -> HitInfo {
     thisHit.pos = ray.origin + vec3f(ray.dir.xyz * t);
     thisHit.normal = normalize(thisHit.pos - sphere.pos);
     thisHit.material = sphere.material;
+
+
+    /*let t0 = (sphere.pos - ray.origin - sphere.radius) / ray.dir;
+    let t1 = (sphere.pos - ray.origin + sphere.radius) / ray.dir;
+
+    var minN = vec3f(1.0,0.0,0.0);
+    var maxN = vec3f(1.0,0.0,0.0);
+
+    var tMinX = t0.x;
+    var tMaxX = t1.x;
+    if(tMaxX < tMinX){
+        tMinX = t1.x;
+        tMaxX = t0.x;
+    }
+
+    var tMax = tMinX;
+    var tMin = tMaxX;
+
+    var tMinY = t0.y;
+    var tMaxY = t1.y;
+    if(tMaxY < tMinY){
+        tMinY = t1.y;
+        tMaxY = t0.y;
+    }
+    if(tMinY > tMax){
+        tMax = tMinY;
+        maxN = vec3f(0.0,1.0,0.0);
+    }
+    if(tMaxY < tMin){
+        tMin = tMaxY;
+        minN = vec3f(0.0,1.0,0.0);
+    }
+
+    var tMinZ = t0.z;
+    var tMaxZ = t1.z;
+    if(tMaxZ < tMinZ){
+        tMinZ = t1.z;
+        tMaxZ = t0.z;
+    }
+    if(tMinZ > tMax){
+        tMax = tMinZ;
+        maxN = vec3f(0.0,0.0,1.0);
+    }
+    if(tMaxZ < tMin){
+        tMin = tMaxZ;
+        minN = vec3f(0.0,0.0,1.0);
+    }
+
+    var t: f32;
+    var n: vec3f;
+
+    if(tMax >= 0){
+        t = tMax;
+        n = maxN;
+    } else {
+        t = tMin;
+        n = minN;
+    }
+
+    if(tMax > tMin || t < 0){
+        thisHit.didHit = false;
+        return thisHit;
+    }
+    
+    thisHit.didHit = true;
+    thisHit.dist = t;
+    thisHit.pos = ray.origin + vec3f(ray.dir.xyz * t);
+    thisHit.normal = n * sign(dot(thisHit.pos - sphere.pos,n));
+    thisHit.material = sphere.material;*/
     return thisHit;
 }
 
@@ -151,9 +206,10 @@ fn raySphereIntersect(ray: Ray, sphere: Sphere) -> HitInfo {
 
 fn traceRay(ray: Ray) -> HitInfo {
     var closestHit: HitInfo;
+    var thisHit: HitInfo;
 
     for(var i = 0; i < ${ NUM_SPHERES }; i += 1){
-        var thisHit = raySphereIntersect(ray, spheres[i]);
+        thisHit = raySphereIntersect(ray, spheres[i]);
         if((thisHit.didHit && thisHit.dist < closestHit.dist) || !closestHit.didHit){
             closestHit = thisHit;
         }
@@ -176,6 +232,26 @@ fn getSky(ray: Ray) -> vec3f {
     return mix(groundColor, skyGradient, groundToSky) + sun * sunMask;
 }
 
+fn diffuseHit(
+    ray: Ray,
+    traceResults: HitInfo, 
+    totalLight: ptr<function, vec3f>, 
+    rngState: ptr<function, u32>
+) -> Ray {
+    var newRay: Ray;
+    let material = traceResults.material;
+
+    let diffuseDir = normalize(traceResults.normal + randomDir(rngState));
+    newRay.dir = diffuseDir;
+    newRay.origin = traceResults.pos + newRay.dir * 0.01;
+
+    let emitted = material.color * material.emmissionStrength;
+    *totalLight += emitted * ray.color;
+    newRay.color = ray.color * material.color;
+
+    return newRay;
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn computeMain(@builtin(global_invocation_id) globalInvocationID: vec3u){
     let pos = globalInvocationID.xy;
@@ -184,12 +260,11 @@ fn computeMain(@builtin(global_invocation_id) globalInvocationID: vec3u){
     let frame = simData.frame;
 
     let screenSize = simData.dimensions.x;
-    let texCoords = vec2u(pixel.xy);
-    let pixelIndex: u32 = texCoords.x + u32(screenSize) * texCoords.y;
+    let texCoords = vec2u(pixel);
+    let pixelIndex = texCoords.x + ${ CANVAS_WIDTH } * texCoords.y;
     let planeDist = 1.0;
 
     var rngState = pixelIndex + u32(frame) * 719324593u;
-    //jenkinsHash(dot(texCoords, vec2u(1u,u32(screenSize))) ^ jenkinsHash(u32(frame)));
 
     let rotMatX = mat3x3f(
         1.0, 0.0, 0.0,
@@ -202,74 +277,136 @@ fn computeMain(@builtin(global_invocation_id) globalInvocationID: vec3u){
         -sin(camAngle.y), 0.0, cos(camAngle.y)
     );
 
-    var planePos = vec3f(
-        (pixel.x /*+ random(&rngState) - 0.5*/) / screenSize - 0.5,
-        (pixel.y /*+ random(&rngState) - 0.5)*/) / -screenSize + 0.5, 
+    /*var planePos = vec3f(
+        pixel.x / screenSize - 0.5,
+        pixel.y / -screenSize + 0.5, 
         planeDist
-    );
+    );*/
 
-    let numBounces = 16;
-    let numRays = 6;
+    let numBounces = 50;
+    let numRays = 15;
 
     var averageLight = vec3f(0.0);
+
     for(var i = 0; i < numRays; i += 1){
+
+        var planePos = vec3f(
+            (pixel.x + random(&rngState) - 0.5) / screenSize - 0.5,
+            (pixel.y + random(&rngState) - 0.5) / -screenSize + 0.5, 
+            planeDist
+        );
+
         var ray: Ray;
         ray.origin = camPos;
         ray.dir = normalize(rotMatY * rotMatX * planePos);
+        ray.color = vec3f(1.0);
 
         var totalLight = vec3f(0.0);
-        var rayColor = vec3f(1.0);
         
         for(var j = 0; j < numBounces; j += 1){
             let traceResults = traceRay(ray);
-            if(traceResults.didHit){
+            
+            if(!traceResults.didHit){
+                totalLight += getSky(ray) * ray.color;
+                break;
+            }
 
-                let material = traceResults.material;
+            let material = traceResults.material;
+            let materialType = i32(material.materialType);
 
-                let indRef = material.refractiveIndex;
-                let rayIsInside = select(1.0,0.0,dot(ray.dir,traceResults.normal) > 0.0);
-                let indRefsRatio = select(1.0 / indRef,indRef,rayIsInside == 0.0);
-                let n = faceForward(traceResults.normal,ray.dir,traceResults.normal);
+            switch materialType {
+                /*case 1: {
+                    /*let diffuseDir = normalize(traceResults.normal + randomDir(&rngState));
+                    ray.dir = diffuseDir;
+                    ray.origin = traceResults.pos + ray.dir * 0.01;
 
-                var reflectance = (1.0 - indRefsRatio) / (1.0 + indRefsRatio);
-                reflectance = reflectance * reflectance;
-                reflectance = reflectance + (1.0 - reflectance) * pow((1.0 - dot(n,-ray.dir)),5.0);
+                    let emitted = material.color * material.emmissionStrength;
+                    totalLight += emitted * ray.color;
+                    ray.color *= material.color;*/
+                    ray = diffuseHit(ray, traceResults, &totalLight, &rngState);
+                }*/
+                case 2: {
+                    let specularDir = reflect(ray.dir, traceResults.normal);
+                    let diffuseDir = normalize(traceResults.normal + randomDir(&rngState));
+                    ray.dir = mix(diffuseDir, specularDir, material.smoothness);
+                    ray.origin = traceResults.pos + ray.dir * 0.01;
 
-                var hitWasGlossy = 0.0;
-                var newDir = refract(ray.dir,n,indRefsRatio);
-                if(length(newDir) <= 0.001 || reflectance >= random(&rngState) * material.transparency){
-                    var specularDir = reflect(ray.dir, n);
-                    var diffuseDir = normalize(n + randomDir(&rngState));
-                    if(material.specularProb >= random(&rngState)){
-                        hitWasGlossy = 1.0;
+                    let emitted = material.color * material.emmissionStrength;
+                    totalLight += emitted * ray.color;
+                    ray.color *= material.color;
+                }
+                case 3: {
+                    let indRef = material.specularProb;
+                    let n = traceResults.normal;
+
+                    let cosTheta1 = dot(n,-ray.dir);
+                    let cosTheta2 = sqrt(1 - (1 - cosTheta1 * cosTheta1) / (indRef * indRef));
+
+                    let fp = (indRef * cosTheta1 - cosTheta2) / (indRef * cosTheta1 + cosTheta2);
+                    let fs = (cosTheta1 - indRef * cosTheta2) / (cosTheta1 + indRef * cosTheta2);
+
+                    var reflectance = 0.5 * (fp * fp + fs * fs);
+    
+                    /*
+                    * Schlick's approximation
+                    var reflectance = (1.0 - indRef) / (1.0 + indRef);
+                    reflectance = reflectance * reflectance;
+                    reflectance = reflectance + (1.0 - reflectance) * pow((1.0 - cosTheta1),5.0);
+                    */
+    
+                    var newDir = traceResults.normal + randomDir(&rngState);
+                    var hitColor = material.color;
+                    if(reflectance >= random(&rngState)){
+                        newDir = reflect(ray.dir, n);
+                        hitColor = vec3f(1.0);
                     }
     
-                    newDir = mix(diffuseDir, specularDir, material.smoothness * hitWasGlossy);
+                    ray.dir = normalize(newDir);
+                    ray.origin = traceResults.pos + ray.dir * 0.01;
+    
+                    var emitted = material.color * material.emmissionStrength;
+                    totalLight += emitted * ray.color;
+                    ray.color *= hitColor;
                 }
+                case 4: {
+                    let indRef = material.refractiveIndex;
+                    let rayIsInside = select(1.0,-1.0,dot(ray.dir,traceResults.normal) > 0.0);
+                    let indRefsRatio = select(1.0 / indRef,indRef,rayIsInside == -1.0);
+                    let n = traceResults.normal * rayIsInside;
 
-                ray.dir = normalize(newDir);
-                ray.origin = traceResults.pos + ray.dir * 0.001;
+                    let cosTheta1 = dot(n,-ray.dir);
+                    let cosTheta2 = sqrt(1 - (1 - cosTheta1 * cosTheta1) * indRefsRatio * indRefsRatio);
 
-                var emitted = material.emmissionColor * material.emmissionStrength;
-                totalLight += emitted * rayColor;
-                rayColor *= mix(material.color, material.specularColor, hitWasGlossy * rayIsInside);
+                    let fp = (cosTheta1 - cosTheta2 * indRefsRatio) / (cosTheta1 + cosTheta2 * indRefsRatio);
+                    let fs = (cosTheta1 * indRefsRatio - cosTheta2) / (cosTheta1 * indRefsRatio + cosTheta2);
 
-                /*let specularDir = reflect(ray.dir, traceResults.normal);
-                let diffuseDir = normalize(traceResults.normal + randomDir(&rngState));
-                var hitWasGlossy = 0.0;
-                if(material.specularProb >= random(&rngState)){
-                    hitWasGlossy = 1.0;
+                    var reflectance = 0.5 * (fp * fp + fs * fs);
+    
+                    var newDir = refract(ray.dir,n,indRefsRatio);
+                    var hitColor = vec3f(1.0);
+                    if(/*length(newDir) < 0.1 || */reflectance >= random(&rngState)){
+                        newDir = reflect(ray.dir, n);
+                    } else if(rayIsInside == -1.0){
+                        hitColor = material.color;
+                    }
+    
+                    ray.dir = normalize(newDir);
+                    ray.origin = traceResults.pos + ray.dir * 0.01;
+    
+                    var emitted = material.color * material.emmissionStrength;
+                    totalLight += emitted * ray.color;
+                    ray.color *= hitColor;
                 }
+                default {
+                    ray = diffuseHit(ray, traceResults, &totalLight, &rngState);
+                }
+            }
 
-                ray.dir = normalize(mix(diffuseDir, specularDir, material.smoothness * hitWasGlossy));
-                ray.origin = traceResults.pos + ray.dir * 0.001;
-
-                var emitted = material.emmissionColor * material.emmissionStrength;
-                totalLight += emitted * rayColor;
-                rayColor *= mix(material.color, material.specularColor, hitWasGlossy);*/
-                
-            } else {
-                totalLight += getSky(ray) * rayColor;
+            
+            //* Attempt at russian roulette for path termination
+            let energy = (ray.color.x + ray.color.y + ray.color.z) / 3.0;
+            let terminateChance = 2 * (1 - energy) / f32(numBounces);
+            if(terminateChance < random(&rngState) && j > 5){
                 break;
             }
             
@@ -280,7 +417,7 @@ fn computeMain(@builtin(global_invocation_id) globalInvocationID: vec3u){
 
     let previousColor = vec3f(textureLoad(inputTexture, pos, 0).xyz);
 
-    averageLight = max(pow(averageLight / f32(numRays), vec3f(0.454545454545)), vec3f(0.0));
+    averageLight = sqrt(max(averageLight / f32(numRays), vec3f(0.0)));
     let weight = 1.0/frame;
     averageLight = weight * averageLight + (1.0 - weight) * previousColor;
 
